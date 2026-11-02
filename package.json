@@ -1,0 +1,11 @@
+{
+  "name": "nexus-portale-clienti",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portale Nexus statico: controlli senza framework o dipendenze runtime aggiuntive",
+  "scripts": {
+    "build": "node scripts/check.cjs",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "engines": { "node": ">=20" }
+}
