@@ -24,7 +24,7 @@ test('Month scope; skip Spediamo Pro and already linked BRT',()=>{
 });
 test('Save patches linkage only with null guard; repeat is idempotent',async()=>{
  const {ctx,calls}=setup();const p=ctx.brtAutoPlan([charge()],[shipment()],'2026-10');
- assert.equal(await ctx.brtAutoSave(p,'2026-10'),1);assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0].body),'{"shipment_id":"s1"}');assert(calls[0].query.includes('shipment_id=is.null'));assert(calls[0].query.includes('reference=eq.99334'));
+ assert.equal(await ctx.brtAutoSave(p,'2026-10'),1);assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0].body),'{"shipment_id":"s1"}');assert(calls[0].query.includes('shipment_id=is.null'));assert(decodeURIComponent(calls[0].query).includes('reference=eq."99334"'));
  assert.equal(await ctx.brtAutoSave(p,'2026-10'),0);assert.equal(calls.length,1);
 });
 test('Changed rows/admin permissions/empty PATCH response cannot silently succeed',async()=>{
@@ -36,4 +36,43 @@ test('Changed rows/admin permissions/empty PATCH response cannot silently succee
 test('Partial failure reports progress and retains saved linkage',async()=>{
  let n=0;const a=charge(),b=charge({id:'c2',reference:'99335'});const ships=[shipment(),shipment({id:'s2',reference:'99335'})];const {ctx}=setup([a,b],ships,async()=>{if(++n===2)throw Error('Errore di rete');return[{id:'c1'}]});
  const p=ctx.brtAutoPlan([a,b],ships,'2026-10');await assert.rejects(ctx.brtAutoSave(p,'2026-10'),/1 nuovi abbinamenti salvati.*Errore di rete/);assert.equal(a.shipment_id,'s1');assert.equal(b.shipment_id,null);
+});
+
+test('No BRT reference: propose unique recipient prefix/CAP/date, never save without review',async()=>{
+ const c=charge({recipient:'STEFANIA PIZZ',reference:'99325'}),s=shipment({reference:null,recipient:'Stefania Pizzetti',tracking:'166000000000000001'});
+ const {ctx,calls}=setup([c],[s]);const p=ctx.brtAutoPlan([c],[s],'2026-10');
+ assert.equal(p[0].shipment.id,'s1');assert.equal(p[0].needsReview,true);
+ await assert.rejects(ctx.brtAutoSave(p,'2026-10'),/seleziona esplicitamente/);assert.equal(calls.length,0);
+ p[0].reviewConfirmed=true;assert.equal(await ctx.brtAutoSave(p,'2026-10'),1);
+});
+test('Exact full tracking is a coded match; conflicting reference/tracking never guessed',()=>{
+ const c=charge({reference:'missing',carrier_code:'00123456789012'}),s=shipment({reference:null,tracking:'00123456789012'});
+ const {ctx}=setup();const p=ctx.brtAutoPlan([c],[s],'2026-10');assert.equal(p[0].shipment.id,'s1');assert.equal(p[0].needsReview,false);
+ assert.equal(ctx.brtAutoPlan([c],[shipment({reference:'missing',tracking:'other'}),shipment({...s,id:'s2'})],'2026-10')[0].shipment,null);
+ assert.equal(ctx.brtAutoPlan([c],[shipment({...s,tracking:'123456789012'})],'2026-10')[0].shipment,null);
+});
+test('Fallback rejects ambiguous names, short names, mismatched date/CAP and duplicate target',()=>{
+ const c=charge({recipient:'Stefania Pizz',reference:'unknown'}),s=shipment({recipient:'STEFANIA PIZZETTI',reference:null});
+ const {ctx}=setup();
+ for(const ships of [[s,{...s,id:'s2'}],[{...s,postcode:'20100'}],[{...s,shipped_on:'2026-10-06'}],[{...s,client_id:'japan'}]]){
+  assert.equal(ctx.brtAutoPlan([c],ships,'2026-10')[0].shipment,null);
+ }
+ assert.equal(ctx.brtAutoPlan([{...c,recipient:'Anna'}],[{...s,recipient:'Anna Rossi'}],'2026-10')[0].shipment,null);
+ const both=ctx.brtAutoPlan([c,{...c,id:'c2',reference:'another'}],[s],'2026-10');assert.equal(both.filter(x=>x.shipment).length,0);
+});
+test('Changed Deagor recipient/tracking invalidates reviewed proposal before PATCH',async()=>{
+ const c=charge({recipient:'Stefania Pizz',reference:'unknown'}),s=shipment({recipient:'STEFANIA PIZZETTI',reference:null,tracking:'old'}),fresh={...s,tracking:'new'};
+ const {ctx,calls}=setup([c],[fresh]);const p=ctx.brtAutoPlan([c],[s],'2026-10');p[0].reviewConfirmed=true;
+ await assert.rejects(ctx.brtAutoSave(p,'2026-10'),/Dati modificati/);assert.equal(calls.length,0);
+});
+
+test('Preview leaves name-based proposals unchecked; explicit selection enables confirmation',async()=>{
+ const c=charge({recipient:'Stefania Pizz',reference:'unknown'}),s=shipment({recipient:'STEFANIA PIZZETTI',reference:null});
+ const {ctx,calls}=setup([c],[s]);let boxes=[],closed=false;
+ const submit={},button={},form={querySelector:()=>submit,querySelectorAll:selector=>selector.includes('data-proposal')?boxes.filter(x=>x.proposal):boxes.filter(x=>x.checked)};
+ Object.assign(ctx,{state:{admin:true,month:'2026-10'},esc:v=>String(v??''),monthName:x=>x,date:x=>x,clientName:()=> 'Cliente prova',table:(heads,rows)=>rows.map(r=>r.join('')).join(''),toast:()=>{},load:async()=>{},FormData:class{get(name){return boxes.find(x=>x.name===name)?.checked?'on':null}},document:{getElementById:id=>id==='brt-auto-match'?button:id==='editform'?form:id==='dialog'?{close:()=>{closed=true}}:{},},showForm:(title,fields)=>{boxes=[...fields.matchAll(/<input type="checkbox" name="(include_[0-9]+)"([^>]+)>/g)].map(m=>({name:m[1],proposal:m[2].includes('data-proposal'),checked:m[2].includes('checked')}))}});
+ vm.runInContext(html.slice(html.indexOf('async function brtAutoMatch('),html.indexOf('function matchForm(id){')),ctx);
+ await ctx.brtAutoMatch();assert.equal(boxes.length,1);assert.equal(boxes[0].checked,false);assert.equal(submit.disabled,true);
+ form.onchange({target:{id:'brt-select-proposals',checked:true}});assert.equal(boxes[0].checked,true);assert.equal(submit.disabled,false);
+ await form.onsubmit({preventDefault(){}});assert.equal(calls.length,1);assert.equal(closed,true);
 });
