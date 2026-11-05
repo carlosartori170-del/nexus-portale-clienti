@@ -86,8 +86,9 @@ test('REST regression: save filters match stored values literally, including pun
    assert.equal(query.get(k),'eq.'+c[k],k+' must preserve the literal value without extra quotes');
   }
   assert.equal(query.get('id'),'eq.'+c.id);assert.equal(query.get('shipment_id'),'is.null');
-  assert.equal(query.size,8);assert.equal(Object.keys(request.body).join(','),'shipment_id');
+  assert.equal(query.size,9);assert.equal(query.get('nexus_owned'),'eq.false');assert.equal(Object.keys(request.body).join(','),'shipment_id');
   return[{id:c.id,shipment_id:s.id}];
  });
  const plan=ctx.brtAutoPlan([c],[s],'2026-10');assert.equal(await ctx.brtAutoSave(plan,'2026-10'),1);assert.equal(calls.length,1);
 });
+
