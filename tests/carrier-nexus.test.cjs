@@ -12,13 +12,14 @@ test('BRT automatic matching never proposes an internal Nexus row',()=>{
  assert.equal(ctx.brtAutoPlan([own],[{id:'s1',client_id:'client',reference:'ref',postcode:'00125',shipped_on:'2026-10-05',carrier:'BRT'}],'2026-10').length,0);
 });
 test('Ownership checkbox disables client assignment and requires explicit removal of existing customer amount',()=>{
- const nodes={carrier_nexus_owned:{checked:true},carrier_assignment:{},carrier_clear_customer:{},carrier_clear_notice:{}};
+ const nodes={carrier_destination:{value:'nexus'},carrier_assignment:{},carrier_direct_client:{},carrier_clear_customer:{},carrier_clear_notice:{}};
  const ctx={document:{getElementById:id=>nodes[id]}};vm.createContext(ctx);vm.runInContext(html.slice(html.indexOf('function toggleCarrierOwnership('),html.indexOf('function matchForm(id){')),ctx);
  ctx.toggleCarrierOwnership();assert.equal(nodes.carrier_assignment.disabled,true);assert.equal(nodes.carrier_clear_customer.required,true);assert.equal(nodes.carrier_clear_notice.hidden,false);
- nodes.carrier_nexus_owned.checked=false;ctx.toggleCarrierOwnership();assert.equal(nodes.carrier_assignment.disabled,false);assert.equal(nodes.carrier_clear_customer.required,false);assert.equal(nodes.carrier_clear_notice.hidden,true);
+ nodes.carrier_destination.value='shipment';ctx.toggleCarrierOwnership();assert.equal(nodes.carrier_assignment.disabled,false);assert.equal(nodes.carrier_clear_customer.required,false);assert.equal(nodes.carrier_clear_notice.hidden,true);
+ nodes.carrier_destination.value='direct';ctx.toggleCarrierOwnership();assert.equal(nodes.carrier_direct_client.disabled,false);assert.equal(nodes.carrier_direct_client.required,true);assert.equal(nodes.carrier_assignment.disabled,true);
 });
 test('BRT and Spediamo manual assignments use the same transactional RPC; exports label internal costs',()=>{
  const assignment=html.slice(html.indexOf('function carrierAssignmentForm('),html.indexOf('function toggleCarrierOwnership('));
- assert(assignment.includes("api('rpc/portal_assign_carrier_charge'"));assert(assignment.includes("p_shipment:owned?null:"));assert(html.includes('Nexus · costo interno'));
+ assert(assignment.includes("api('rpc/portal_assign_carrier_destination'"));assert(assignment.includes("p_shipment:owned||direct?null:"));assert(html.includes('Nexus · costo interno'));assert(assignment.includes("p_direct_client:direct?v.direct_client_id:null"));
  assert(html.includes("matchForm=function(id){const c=state.charges.find(c=>c.id===id);return carrierAssignmentForm(id)}"));
 });
