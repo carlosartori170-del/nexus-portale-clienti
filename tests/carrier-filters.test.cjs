@@ -39,3 +39,16 @@ test('Admin cost CSV uses filtered rows and header exposes date sorting in both 
  const exporter=html.split('\n').find(l=>l.startsWith('function exportData(){'));vm.runInContext(exporter,ctx);ctx.exportData();assert.equal(out.csv.length,2);assert.equal(out.csv[1][4],'Èrika Rossi');
  assert.match(ctx.carrierDateHeader('costs'),/sortCarrierDate/);assert.match(ctx.carrierFilterBar('costs'),/Importo minimo/);assert.match(ctx.carrierFilterBar('customer'),/Data spedizione dal/);
 });
+
+test('Matching status combines with dates, clients and CSV; reset restores all rows',()=>{
+ const {ctx,out}=setup();
+ assert.deepEqual(ids(ctx.filterCarrierRows(costs,orders,'costs',{matchStatus:'unmatched'})),['c3']);
+ assert.deepEqual(ids(ctx.filterCarrierRows(costs,orders,'costs',{matchStatus:'matched',sort:'date_asc'})),['c2','c1']);
+ assert.deepEqual(ids(ctx.filterCarrierRows(costs,orders,'costs',{matchStatus:'unmatched',client:'optic'})),[]);
+ assert.deepEqual(ids(ctx.filterCarrierRows(costs,orders,'costs',{matchStatus:'unmatched',from:'2026-10-02',to:'2026-10-02'})),['c3']);
+ vm.runInContext("carrierTableFilters.costs={matchStatus:'unmatched'}",ctx);
+ ctx.state.admin=true;ctx.state.view='carriers';vm.runInContext(html.split('\n').find(l=>l.startsWith('function exportData(){')),ctx);
+ ctx.exportData();assert.equal(out.csv.length,2);assert.equal(out.csv[1][4],'Altra persona');
+ ctx.resetCarrierFilters('costs');ctx.exportData();assert.equal(out.csv.length,4);
+ assert.match(ctx.carrierFilterBar('costs'),/Da abbinare/);assert(!ctx.carrierFilterBar('customer').includes('Stato abbinamento'));
+});
