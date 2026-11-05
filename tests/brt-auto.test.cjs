@@ -24,7 +24,7 @@ test('Month scope; skip Spediamo Pro and already linked BRT',()=>{
 });
 test('Save patches linkage only with null guard; repeat is idempotent',async()=>{
  const {ctx,calls}=setup();const p=ctx.brtAutoPlan([charge()],[shipment()],'2026-10');
- assert.equal(await ctx.brtAutoSave(p,'2026-10'),1);assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0].body),'{"shipment_id":"s1"}');assert(calls[0].query.includes('shipment_id=is.null'));assert(decodeURIComponent(calls[0].query).includes('reference=eq."99334"'));
+ assert.equal(await ctx.brtAutoSave(p,'2026-10'),1);assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0].body),'{"shipment_id":"s1"}');assert(calls[0].query.includes('shipment_id=is.null'));assert(decodeURIComponent(calls[0].query).includes('reference=eq.99334'));
  assert.equal(await ctx.brtAutoSave(p,'2026-10'),0);assert.equal(calls.length,1);
 });
 test('Changed rows/admin permissions/empty PATCH response cannot silently succeed',async()=>{
@@ -75,4 +75,19 @@ test('Preview leaves name-based proposals unchecked; explicit selection enables 
  await ctx.brtAutoMatch();assert.equal(boxes.length,1);assert.equal(boxes[0].checked,false);assert.equal(submit.disabled,true);
  form.onchange({target:{id:'brt-select-proposals',checked:true}});assert.equal(boxes[0].checked,true);assert.equal(submit.disabled,false);
  await form.onsubmit({preventDefault(){}});assert.equal(calls.length,1);assert.equal(closed,true);
+});
+
+test('REST regression: save filters match stored values literally, including punctuation',async()=>{
+ const c=charge({recipient:'D\'Angelo, "Mario" & Figli (MI)',reference:'99325',carrier_code:'00123456789012'});
+ const s=shipment({reference:'99325',recipient:c.recipient});
+ const {ctx,calls}=setup([c],[s],async(table,request)=>{
+  const query=new URLSearchParams(request.query);
+  for(const k of ['reference','carrier_code','recipient','postcode','shipped_on','month']){
+   assert.equal(query.get(k),'eq.'+c[k],k+' must preserve the literal value without extra quotes');
+  }
+  assert.equal(query.get('id'),'eq.'+c.id);assert.equal(query.get('shipment_id'),'is.null');
+  assert.equal(query.size,8);assert.equal(Object.keys(request.body).join(','),'shipment_id');
+  return[{id:c.id,shipment_id:s.id}];
+ });
+ const plan=ctx.brtAutoPlan([c],[s],'2026-10');assert.equal(await ctx.brtAutoSave(plan,'2026-10'),1);assert.equal(calls.length,1);
 });

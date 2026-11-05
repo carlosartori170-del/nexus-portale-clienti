@@ -115,7 +115,7 @@ async function brtAutoSave(plan,month){
   if(c?.shipment_id===p.shipment.id)continue;
   const fresh=brtAutoPlan(charges,shipments,month).find(r=>r.charge.id===p.charge.id);
   if(!fresh?.shipment||fresh.shipment.id!==p.shipment.id||fresh.needsReview!==p.needsReview||s.client_id!==p.shipment.client_id||s.reference!==p.shipment.reference||s.tracking!==p.shipment.tracking||s.recipient!==p.shipment.recipient||s.carrier!==p.shipment.carrier||s.postcode!==p.shipment.postcode||s.shipped_on!==p.shipment.shipped_on||c.reference!==p.charge.reference||c.carrier_code!==p.charge.carrier_code||c.recipient!==p.charge.recipient||c.postcode!==p.charge.postcode||c.shipped_on!==p.charge.shipped_on)throw Error('Dati modificati: riapri l’anteprima prima di continuare.');
-  const eq=(field,value)=>'&'+field+(value==null?'=is.null':'=eq.'+encodeURIComponent('"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"'));
+  const eq=(field,value)=>'&'+field+(value==null?'=is.null':'=eq.'+encodeURIComponent(String(value)));
   const q='id=eq.'+encodeURIComponent(c.id)+'&shipment_id=is.null'+['reference','carrier_code','recipient','postcode','shipped_on','month'].map(k=>eq(k,c[k])).join('');
   const result=await api('portal_carrier_charges',{method:'PATCH',query:q,body:{shipment_id:s.id}});
   if(!Array.isArray(result)||result.length!==1)throw Error('Addebito modificato o non aggiornabile: riapri l’anteprima.');
