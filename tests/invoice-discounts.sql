@@ -1,0 +1,55 @@
+-- Dopo entrambe le parti della migrazione. Solo dati sintetici e rollback.
+begin;
+do $claims$ begin perform set_config('request.jwt.claim.sub',(select user_id::text from public.portal_admins order by user_id limit 1),true);end $claims$;
+set local role authenticated;
+do $test$
+declare cid uuid; mid uuid; m public.portal_months%rowtype; d jsonb; old_d jsonb; old_lines jsonb; result jsonb; snap jsonb; failed boolean; admin_claim text;
+begin
+ admin_claim:=current_setting('request.jwt.claim.sub');
+ insert into public.portal_clients(name,billing_rules,minimum_logistics,vat_rate)
+ values('Test sconto fattura '||gen_random_uuid(),'[{"label":"Logistica","basis":"billable_shipments","mode":"fixed","rate":80,"category":"logistics"},{"label":"Imballi","basis":"shipped_pieces","mode":"fixed","rate":10,"category":"packaging"}]',100,22) returning id into cid;
+ insert into public.portal_carrier_charges(invoice_number,month,carrier_code,reference,recipient,shipped_on,transport,direct_client_id) values('TEST SCONTO','2099-11-01',gen_random_uuid()::text,'TEST','Destinatario test','2099-11-05',20,cid);
+ insert into public.portal_transports(client_id,transported_on,description,amount) values(cid,'2099-11-05','Ritiro test',10);
+ result:=public.portal_validate_section(cid,'2099-11-01','carriers');assert result->>'preinvoice_error' is null;
+ select * into m from public.portal_months where client_id=cid and month='2099-11-01';mid:=m.id;old_lines:=m.invoice_lines;
+ assert m.invoice_total=170.80,'Totale prima dello sconto errato';
+ result:=public.portal_set_invoice_discount(cid,'2099-11-01',15,'Accordo commerciale test',m.invoice_lines,null);
+ assert (result->>'invoice_total')::numeric=152.50 and (result->>'vat_amount')::numeric=27.50,'Sconto o IVA errati';
+ select * into m from public.portal_months where id=mid;
+ assert m.invoice_lines @> '[{"basis":"logistics_minimum","amount":20}]'::jsonb,'Il minimo ha annullato lo sconto';
+ assert m.invoice_lines @> '[{"basis":"invoice_discount","amount":-15,"rate":-15,"quantity":1,"note":"Accordo commerciale test"}]'::jsonb;
+ select to_jsonb(x) into d from public.portal_invoice_discounts x where client_id=cid and month='2099-11-01';
+ old_d:=d;
+ result:=public.portal_build_preinvoice(cid,'2099-11-01');
+ assert (select count(*)=1 from jsonb_array_elements(result->'lines') x where x->>'basis'='invoice_discount'),'Sconto duplicato dopo aggiornamento';
+ result:=public.portal_build_preinvoice(cid,'2099-11-01',true,false,m.validation_versions,m.invoice_lines);
+ snap:=public.portal_invoice_snapshot(mid,'TEST','2099-11-30','2099-12-30','Bonifico','',true);
+ assert (snap->>'net_amount')::numeric=125 and (snap->>'vat_amount')::numeric=27.50 and (snap->>'total_amount')::numeric=152.50;
+ assert snap->'lines' @> '[{"label":"Sconto concordato","amount":-15}]'::jsonb,'Sconto assente nel documento';
+ failed:=false;begin perform public.portal_set_invoice_discount(cid,'2099-11-01',141,'',m.invoice_lines,d);exception when others then failed:=sqlerrm like 'Lo sconto non può superare%';end;assert failed,'Sconto oltre imponibile ammesso';
+ assert (select released and invoice_total=152.50 from public.portal_months where id=mid),'Errore di salvataggio non atomico';
+ result:=public.portal_set_invoice_discount(cid,'2099-11-01',10,'Nuovo accordo test',m.invoice_lines,d);
+ assert (result->>'invoice_total')::numeric=158.60;
+ select * into m from public.portal_months where id=mid;assert not m.released,'Mese non riaperto dopo modifica sconto';
+ failed:=false;begin perform public.portal_set_invoice_discount(cid,'2099-11-01',5,'',old_lines,d);exception when others then failed:=sqlerrm like 'Prefattura modificata:%';end;assert failed,'Anteprima prefattura scaduta ammessa';
+ failed:=false;begin perform public.portal_set_invoice_discount(cid,'2099-11-01',5,'',m.invoice_lines,old_d);exception when others then failed:=sqlerrm like 'Sconto modificato:%';end;assert failed,'Anteprima sconto scaduta ammessa';
+ select to_jsonb(x) into d from public.portal_invoice_discounts x where client_id=cid and month='2099-11-01';
+ failed:=false;begin perform public.portal_set_invoice_discount(cid,'2099-11-01',-1,'',m.invoice_lines,d);exception when others then failed:=sqlerrm like 'Inserisci uno sconto%';end;assert failed;
+ failed:=false;begin perform public.portal_set_invoice_discount(cid,'2099-11-01',1.001,'',m.invoice_lines,d);exception when others then failed:=sqlerrm like 'Inserisci uno sconto%';end;assert failed;
+ result:=public.portal_set_invoice_discount(cid,'2099-11-01',0,'',m.invoice_lines,d);
+ assert (result->>'invoice_total')::numeric=170.80 and not exists(select 1 from jsonb_array_elements(result->'lines') x where x->>'basis'='invoice_discount'),'Rimozione sconto fallita';
+ select * into m from public.portal_months where id=mid;select to_jsonb(x) into d from public.portal_invoice_discounts x where client_id=cid and month='2099-11-01';
+ result:=public.portal_set_invoice_discount(cid,'2099-11-01',140,'Sconto totale test',m.invoice_lines,d);
+ assert (result->>'invoice_total')::numeric=0 and (result->>'vat_amount')::numeric=0,'Sconto totale non ammesso';
+ select * into m from public.portal_months where id=mid;select to_jsonb(x) into d from public.portal_invoice_discounts x where client_id=cid and month='2099-11-01';
+ result:=public.portal_set_invoice_discount(cid,'2099-11-01',15,'Ripristino test',m.invoice_lines,d);
+ result:=public.portal_refresh_billing_rates(cid,'2099-11-01');assert result->>'preinvoice_error' is null and (result->>'invoice_total')::numeric=152.50,'Aggiornamento tariffe ha perso lo sconto';
+ assert not (public.portal_billing_requirements(cid,'2099-11-01')->'fields' ? 'invoice_discount'),'Sconto trattato come quantità da convalidare';
+ perform set_config('request.jwt.claim.sub',gen_random_uuid()::text,true);
+ assert (select count(*)=0 from public.portal_invoice_discounts),'Sconti visibili a un utente non amministratore';
+ failed:=false;begin perform public.portal_set_invoice_discount(cid,'2099-11-01',1,'','[]');exception when insufficient_privilege then failed:=true;end;assert failed,'Scrittura non admin ammessa';
+ perform set_config('request.jwt.claim.sub',admin_claim,true);
+ assert not has_function_privilege('anon','public.portal_set_invoice_discount(uuid,date,numeric,text,jsonb,jsonb)','EXECUTE');
+end $test$;
+select 'Sconti: minimo, voci extra, IVA, conferma, PDF snapshot, modifica, rimozione, limiti, aggiornamento tariffe e RLS superati' as esito;
+rollback;
