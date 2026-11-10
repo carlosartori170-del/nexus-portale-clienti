@@ -23,7 +23,7 @@ main{padding:30px 36px 60px}.topbar{border-bottom:2px solid var(--dark);padding-
 @media print{.shell{display:block}main{padding:0}.card,.tablewrap{box-shadow:none}}
 
 .carrier-filter-card{background:white;border:1px solid var(--line);border-radius:8px;padding:16px;margin:16px 0}.carrier-filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.carrier-filter-grid>div{min-width:0}.carrier-filter-grid label{font-size:12px}@media(max-width:500px){.carrier-filter-grid{grid-template-columns:1fr}}@media print{.carrier-filter-card{display:none}}
-</style><script src="assets/vendor/xlsx-0.20.3.min.js"></script><script src="assets/inpost-core.js"></script><script src="assets/manual-carrier.js"></script><script src="assets/client-period.js"></script><link rel="stylesheet" href="assets/crm.css"></head><body><div id="app"></div><dialog id="dialog"></dialog><div id="toast" role="status"></div>
+</style><script src="assets/vendor/xlsx-0.20.3.min.js"></script><script src="assets/inpost-core.js"></script><script src="assets/inventory-pdf.js"></script><script src="assets/manual-carrier.js"></script><script src="assets/client-period.js"></script><link rel="stylesheet" href="assets/crm.css"></head><body><div id="app"></div><dialog id="dialog"></dialog><div id="toast" role="status"></div>
 <script>
 'use strict';
 const CONFIG={url:'https://eqtyfnluswalfassmlxd.supabase.co',key:'sb_publishable_QFxWloxs6waJCTvV1jtuPQ_MI7K4foM'};
@@ -259,18 +259,13 @@ function inventoryCSV(text){const rows=parseCSV(text),headers=rows.shift().map(n
  if(!groups.has(client.id))groups.set(client.id,[]);groups.get(client.id).push(item);
  }if(!groups.size)throw Error('Inventario privo di articoli');return [...groups].map(([client_id,items])=>({client_id,items,...inventoryItemsTotal(items)}));
 }
-function inventoryPDFText(lines){const items=[];let foundHeader=false;for(const line of lines){if(/\bsku\b/i.test(line)&&/\bvolume\b/i.test(line)&&/\btotal_qty\b/i.test(line)){foundHeader=true;continue}if(!line.trim())continue;
- const m=line.match(/^\s*(\S+)\s+(.*?)\s+(\d+[.,]\d+)\s+(\d+[.,]\d+)\s+(\d+[.,]\d+)\s+(\d+[.,]\d+)\s+(\d+)\s*$/);
- if(m){items.push({sku:m[1],name:(()=>{const label=m[2].trim(),first=label.split(/\s+/)[0];return first===m[1]||/^\d{8,14}$/.test(first)?label.slice(first.length).trim():label})(),volume:csvNumber(m[3]),qty:Number(m[7])});}else if(foundHeader&&!/^\s*(?:pagina|page|\d+\s*\/\s*\d+)/i.test(line))throw Error('Riga PDF non riconosciuta: '+line.slice(0,100));
- }if(!foundHeader||!items.length)throw Error('Il PDF non contiene la tabella inventario Deagor riconoscibile. Usa il CSV.');return {items,...inventoryItemsTotal(items)};}
+function inventoryPDFData(pages){const parsed=InventoryPDF.parse(pages);return {...parsed,...inventoryItemsTotal(parsed.items)}}
 let inventoryPDFModule=null;
 async function readInventoryPDF(file){
  if(!inventoryPDFModule){inventoryPDFModule=await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs');inventoryPDFModule.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';}
  const doc=await inventoryPDFModule.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;
- const lines=[];try{if(doc.numPages>200)throw Error('PDF troppo lungo. Usa il CSV.');for(let n=1;n<=doc.numPages;n++){const page=await doc.getPage(n),text=await page.getTextContent(),groups=[];
- for(const it of text.items){if(!it.str?.trim())continue;const y=it.transform[5];let g=groups.find(g=>Math.abs(g.y-y)<2);if(!g){g={y,items:[]};groups.push(g)}g.items.push(it)}
- for(const g of groups.sort((a,b)=>b.y-a.y))lines.push(g.items.sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' '));}
- return inventoryPDFText(lines);}finally{await doc.destroy()}
+ const pages=[];try{if(doc.numPages>200)throw Error('PDF troppo lungo. Usa il CSV.');for(let n=1;n<=doc.numPages;n++){const page=await doc.getPage(n),text=await page.getTextContent();pages.push(text.items.filter(i=>i.str?.trim()).map(i=>({str:i.str,x:i.transform[4],y:i.transform[5]})))}
+ return inventoryPDFData(pages);}finally{await doc.destroy()}
 }
 function inventoryUpload(){
  const d=$('#dialog');d.innerHTML='<div class="dialoghead"><h2>Importa inventari Deagor</h2><button class="close" onclick="document.querySelector(\'#dialog\').close()">×</button></div><p>Seleziona uno o più CSV o PDF giornalieri. Il CSV identifica il cliente; per il PDF lo scegli nell’anteprima.</p><p class="muted">La data viene proposta dal numero nel nome inventory_… usando il fuso orario italiano. Confermala o correggila prima di salvare.</p><input id="inventoryfiles" type="file" accept=".csv,.pdf,text/csv,application/pdf" multiple><div id="inventoryprogress"></div><button id="inventoryread" style="margin-top:18px">Leggi i file</button>';
