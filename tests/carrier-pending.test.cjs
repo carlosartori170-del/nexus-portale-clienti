@@ -4,7 +4,7 @@ function setup(){
  const orders=[{id:'brt',client_id:'a',recipient:'Anna Rossi',shipped_on:'2026-10-02',code:'D001',carrier:'BRT'},{id:'sp',client_id:'a',recipient:'Carlo Bianchi',shipped_on:'2026-10-03',code:'D002',carrier:'Spediamo Pro'},{id:'other',client_id:'b',recipient:'Gianni Verdi',shipped_on:'2026-10-01',code:'D003',carrier:'Altro'}];
  const costs=[{shipment_id:'brt',month:'2026-11-01',invoice_number:'BRT futura'},{shipment_id:'sp',month:'2026-10-01',invoice_number:'CSV SPEDIAMO PRO'}],out={};
  const ctx={state:{shipments:orders,charges:costs,month:'2026-10',client:'all',clients:[{id:'a',name:'A'},{id:'b',name:'B'}]},shipments:()=>orders,charges:()=>costs,esc:v=>String(v??''),money:x=>x.toFixed(2),clientName:x=>x,downloadCSV:(name,rows)=>{out.csv=rows},render:()=>{out.rendered=true},toast:x=>{out.error=x}};
- vm.createContext(ctx);vm.runInContext(source,ctx);return {ctx,orders,costs,out};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'../assets/client-period.js'),'utf8'),ctx);vm.runInContext(source,ctx);return {ctx,orders,costs,out};
 }
 test('Unmatched Deagor list checks every carrier and invoice month, ignoring standalone Nexus costs',()=>{
  const {ctx,orders,costs}=setup();assert.deepEqual(Array.from(ctx.carrierRows('pending'),x=>x.id),['other']);

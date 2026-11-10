@@ -3,7 +3,7 @@ const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 const source=html.slice(html.indexOf('const carrierTableFilters='),html.indexOf("function head(title,desc"));
 const orders=[{id:'s1',client_id:'optic',code:'D001',order_number:'ORD-A',recipient:'Giovanni D’Amico',shipped_on:'2026-10-03',customer_charge:8},{id:'s2',client_id:'norelux',code:'D002',recipient:'Èrika Rossi',shipped_on:'2026-10-01',customer_charge:null}];
 const costs=[{id:'c1',shipment_id:'s1',recipient:'Giovanni D’AMICO',shipped_on:'2026-10-03',invoice_number:'626942',reference:'99325',transport:4.4,fuel:.396,extras:0},{id:'c2',shipment_id:'s2',recipient:'Èrika Rossi',shipped_on:'2026-10-01',invoice_number:'SP',transport:8,fuel:0,extras:1},{id:'c3',shipment_id:null,recipient:'Altra persona',shipped_on:'2026-10-02',transport:5,fuel:0,extras:0}];
-function setup(){const out={};const ctx={state:{shipments:orders,clients:[{id:'optic',name:'Optic'},{id:'norelux',name:'Norelux'}],client:'all',month:'2026-10'},shipments:()=>orders,charges:()=>costs,render:()=>{out.rendered=true},toast:x=>{out.error=x},clientName:x=>x,downloadCSV:(name,rows)=>{out.csv=rows},esc:x=>String(x??''),money:x=>x.toFixed(2),document:{getElementById:()=>null}};vm.createContext(ctx);vm.runInContext(source,ctx);return{ctx,out}};
+function setup(){const out={};const ctx={state:{shipments:orders,clients:[{id:'optic',name:'Optic'},{id:'norelux',name:'Norelux'}],client:'all',month:'2026-10'},shipments:()=>orders,charges:()=>costs,render:()=>{out.rendered=true},toast:x=>{out.error=x},clientName:x=>x,downloadCSV:(name,rows)=>{out.csv=rows},esc:x=>String(x??''),money:x=>x.toFixed(2),document:{getElementById:()=>null}};vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'../assets/client-period.js'),'utf8'),ctx);vm.runInContext(source,ctx);return{ctx,out}};
 const ids=rows=>Array.from(rows,r=>r.id);
 test('Date sorting works both ways, is stable and does not mutate underlying billing data',()=>{
  const {ctx}=setup(),original=JSON.stringify(costs);
@@ -52,3 +52,4 @@ test('Matching status combines with dates, clients and CSV; reset restores all r
  ctx.resetCarrierFilters('costs');ctx.exportData();assert.equal(out.csv.length,4);
  assert.match(ctx.carrierFilterBar('costs'),/Da abbinare/);assert(!ctx.carrierFilterBar('customer').includes('Stato abbinamento'));
 });
+
