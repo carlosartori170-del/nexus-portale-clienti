@@ -44,7 +44,7 @@ test('Linked row notes and CSV retain receipt, supplier and origin even with no 
  const {ctx,out,receipt}=setup();const child={...receipt,id:'out',stock_source_id:receipt.id,stock_pieces:0,shipped_on:'2099-11-05',piece_count:2,shipment_count:1,notes:''};ctx.state.dailyDispatches.push(child);
  const note=ctx.dailyDispatchNotes(child);assert.match(note,/2099-10-10/);assert.match(note,/Fornitore <test>/);assert.match(note,/#source-0/);
  const html=ctx.dailyShipmentsPage();assert.match(html,/Spedisci da giacenza/);assert.match(html,/Giacenza attuale/);assert.match(html,/Fornitore &lt;test&gt;/);assert(!html.includes('Fornitore <test>'));
- ctx.exportDailyDispatches();assert(out.csv[0].includes('Giacenza attuale (pezzi)'));assert.equal(out.csv[1][6],1);assert.equal(out.csv[1][8],receipt.id);assert.equal(out.csv[1][7],note);
+ ctx.exportDailyDispatches();assert(out.csv[0].includes('Giacenza attuale (pezzi)'));assert.equal(out.csv[1][out.csv[0].indexOf('Spedizioni effettuate')],1);assert.equal(out.csv[1][out.csv[0].indexOf('Registrazione giacenza originale')],receipt.id);assert.equal(out.csv[1][out.csv[0].indexOf('Note')],note);
 });
 test('Linked row edits keep origin fields locked and deletion explains stock restoration',async()=>{
  const {ctx,out,receipt}=setup();const child={...receipt,id:'out',stock_source_id:receipt.id,stock_pieces:0,shipped_on:'2099-11-05',piece_count:2,shipment_count:1};ctx.state.dailyDispatches.push(child);ctx.dailyDispatchForm('out');assert.match(out.form,/name="stock_pieces" value="0"/);assert.match(out.form,/Pezzi spediti dalla giacenza/);assert.match(out.form,/ricevimento merce del/);
